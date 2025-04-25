@@ -8,7 +8,6 @@ There are currently the following issues with this code:
 
 - [beepy-kdb](https://github.com/ardangelo/beepberry-keyboard-driver) overlay support has been disabled.
 - Red and blue may be getting swapped?
-- The `dts` file was de-compiled and could be cleaned up.
 
 *Run at your own risk.*
 

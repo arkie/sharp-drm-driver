@@ -1,92 +1,64 @@
+// https://github.com/hyphenlee/jdi-drm-rpi
 /dts-v1/;
+/plugin/;
 
 / {
-	// compatible = "brcm,bcm2835", "brcm,bcm2708", "brcm,bcm2709";
-	compatible = "raspberrypi,model-zero-2-w", "brcm,bcm2837";
+	compatible = "raspberrypi,model-zero-2-w", "brcm,bcm2837", "brcm,bcm2835", "brcm,bcm2708", "brcm,bcm2709";
 
 	fragment@0 {
-		target = <0xffffffff>;
-
+		target = <&spi0>;
 		__overlay__ {
 			status = "okay";
 
-			spidev@0 {
+			spidev@0{
 				status = "disabled";
 			};
 
-			spidev@1 {
+			spidev@1{
 				status = "disabled";
 			};
 		};
 	};
 
 	fragment@1 {
-		target = <0xffffffff>;
-
+		target = <&spi0_pins>;
 		__overlay__ {
-			brcm,pins = <0x0a 0x0b>;
+			brcm,pins = <0x0a 0x0b>; /* skipping bcm9 MISO */
 		};
 	};
 
 	fragment@2 {
-		target = <0xffffffff>;
-
+		target = <&gpio>;
 		__overlay__ {
-
-			sharp_pins {
-				brcm,pins = <0x17 0x16 0x12 0x11>;
-				brcm,function = <0x01 0x01 0x01 0x00>;
-				phandle = <0x01>;
+			sharp_pins: sharp_pins {
+				brcm,pins = <23 22 18 17>;
+				brcm,function = <1 1 1 0>; /* out */
 			};
 		};
 	};
 
 	fragment@3 {
-		target = <0xffffffff>;
-
+		target = <&spi0>;
 		__overlay__ {
-			#address-cells = <0x01>;
-			#size-cells = <0x00>;
+			/* needed to avoid dtc warning */
+			#address-cells = <1>;
+			#size-cells = <0>;
 
-			sharp_drm@0 {
+			sharp_drm: sharp_drm@0{
 				compatible = "sharp-drm";
-				reg = <0x00>;
+				reg = <0>;
 				pinctrl-names = "default";
-				pinctrl-0 = <0x01>;
-				vcom-gpios = <0xffffffff 0x17 0x00>;
-				disp-gpios = <0xffffffff 0x16 0x00>;
-				backlit-gpios = <0xffffffff 0x12 0x00>;
-				spi-cs-high = <0x01>;
-				spi-max-frequency = "", "=\t";
-				buswidth = <0x08>;
-				debug = <0x00>;
-				interrupt-parent = <0xffffffff>;
-				interrupts = <0x11 0x01>;
-				phandle = <0x02>;
-			};
-		};
-	};
+				pinctrl-0 = <&sharp_pins>;
+				vcom-gpios = <&gpio 23 0>;
+				disp-gpios = <&gpio 22 0>;
+				backlit-gpios = <&gpio 18 0>;
+				spi-cs-high = <1>;
+				spi-max-frequency = <4000000>;
+				buswidth = <8>;
+				debug = <0>;
 
-	__symbols__ {
-		sharp_pins = "/fragment@2/__overlay__/sharp_pins";
-		sharp_drm = "/fragment@3/__overlay__/sharp_drm@0";
-	};
-
-	__fixups__ {
-		spi0 = "/fragment@0:target:0", "/fragment@3:target:0";
-		spi0_pins = "/fragment@1:target:0";
-		gpio = "/fragment@2:target:0", "/fragment@3/__overlay__/sharp_drm@0:vcom-gpios:0", "/fragment@3/__overlay__/sharp_drm@0:disp-gpios:0", "/fragment@3/__overlay__/sharp_drm@0:backlit-gpios:0", "/fragment@3/__overlay__/sharp_drm@0:interrupt-parent:0";
-	};
-
-	__local_fixups__ {
-
-		fragment@3 {
-
-			__overlay__ {
-
-				sharp_drm@0 {
-					pinctrl-0 = <0x00>;
-				};
+				interrupt-parent = <&gpio>;
+				interrupts = <17 0x01>;
 			};
 		};
 	};
