@@ -40,7 +40,13 @@
 #include "ioctl_iface.h"
 #include "drm_iface.h"
 
+#define MONO 0
+
+#if MONO
+#define CMD_WRITE_LINE 0b10001000
+#else
 #define CMD_WRITE_LINE 0b10000000
+#endif
 #define CMD_CLEAR_SCREEN 0b00100000
 
 // Globals
@@ -81,12 +87,15 @@ struct sharp_memory_panel
 
 	struct gpio_desc *gpio_disp;
 	struct gpio_desc *gpio_vcom;
+	struct gpio_desc *gpio_backlit;
 };
 
 static inline struct sharp_memory_panel *drm_to_panel(struct drm_device *drm)
 {
 	return container_of(drm, struct sharp_memory_panel, drm);
 }
+
+bool backlit_on;
 
 static void vcom_timer_callback(struct timer_list *t)
 {
@@ -97,6 +106,11 @@ static void vcom_timer_callback(struct timer_list *t)
 	// Toggle the GPIO pin
 	vcom_setting = (vcom_setting) ? 0 : 1;
 	gpiod_set_value(panel->gpio_vcom, vcom_setting);
+
+	if (backlit_on != g_param_backlit) {
+	  backlit_on = g_param_backlit;
+	  gpiod_set_value(panel->gpio_backlit, backlit_on ? 1 : 0);
+	}
 
 	// Reschedule the timer
 	mod_timer(&panel->vcom_timer, jiffies + msecs_to_jiffies(1000));
@@ -124,9 +138,9 @@ static int sharp_memory_spi_clear_screen(struct sharp_memory_panel *panel)
 
 static inline u8 sharp_memory_reverse_byte(u8 b)
 {
-	b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
-	b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
-	b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
+	// b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
+	// b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
+	// b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
 	return b;
 }
 
@@ -136,7 +150,7 @@ static int sharp_memory_spi_write_tagged_lines(struct sharp_memory_panel *panel,
 	int rc;
 
 	// Write line command
-	panel->cmd_buf[0] = 0b10000000;
+	panel->cmd_buf[0] = CMD_WRITE_LINE;
 	panel->spi_3_xfers[0].tx_buf = panel->cmd_buf;
 	panel->spi_3_xfers[0].len = 1;
 
@@ -195,8 +209,13 @@ static void draw_overlays(struct sharp_memory_panel *panel, u8* buf, int width,
 				}
 
 				dx = (x + sx) - clip->x1;
+#if MONO
 				buf[(y + dy) * (clip->x2 - clip->x1) + dx]
 					= ov->pixels[(sy * ov->width) + sx];
+#else
+				int i = (y + dy) * (clip->x2 - clip->x1) + dx;
+				buf[i * 3] = ov->pixels[(sy * ov->width) + sx];
+#endif
 			}
 		}
 	}
@@ -275,21 +294,30 @@ static int sharp_memory_clip_mono_tagged(struct sharp_memory_panel* panel, size_
 	iosys_map_set_vaddr(&dst, buf);
 	iosys_map_set_vaddr(&vmap, dma_obj->vaddr);
 	// DMA `clip` into `buf` and convert to 8-bit grayscale
+#if MONO
 	drm_fb_xrgb8888_to_gray8(&dst, NULL, &vmap, fb, clip);
+#else
+	drm_fb_xrgb8888_to_rgb888(&dst, NULL, &vmap, fb, clip);
+#endif
 
 	// End DMA area
 	drm_gem_fb_end_cpu_access(fb, DMA_FROM_DEVICE);
 
 	// Add overlays
-	if (g_param_overlays) {
+	// if (g_param_overlays) {
 
-		// TODO: track overlay draw region
-		draw_overlays(panel, buf, fb->width, clip);
-	}
+	// 	// TODO: track overlay draw region
+	// 	draw_overlays(panel, buf, fb->width, clip);
+	// }
 
+#if MONO
 	// Convert in-place from 8-bit grayscale to mono
 	*result_len = sharp_memory_gray8_to_mono_tagged(buf,
 		(clip->x2 - clip->x1), (clip->y2 - clip->y1), clip->y1);
+#else
+	*result_len = sharp_memory_gray8_to_mono_tagged(buf,
+		(clip->x2 - clip->x1) * 3, (clip->y2 - clip->y1), clip->y1);
+#endif
 
 	// Success
 	return 0;
@@ -349,6 +377,7 @@ static void power_off(struct sharp_memory_panel *panel)
 		gpiod_set_value(panel->gpio_disp, 0);
 	}
 	gpiod_set_value(panel->gpio_vcom, 0);
+	gpiod_set_value(panel->gpio_backlit, 0);
 }
 
 static void sharp_memory_pipe_enable(struct drm_simple_display_pipe *pipe,
@@ -541,6 +570,10 @@ int drm_probe(struct spi_device *spi)
 	if (IS_ERR(panel->gpio_vcom))
 		return dev_err_probe(dev, PTR_ERR(panel->gpio_vcom), "Failed to get GPIO 'vcom'\n");
 
+	panel->gpio_backlit = devm_gpiod_get(dev, "backlit", GPIOD_OUT_LOW);
+	if (IS_ERR(panel->gpio_backlit))
+		return dev_err_probe(dev, PTR_ERR(panel->gpio_backlit), "Failed to get GPIO 'backlit'\n");
+
 	// Initalize DRM mode
 	drm = &panel->drm;
 	ret = drmm_mode_config_init(drm);
@@ -558,7 +591,7 @@ int drm_probe(struct spi_device *spi)
 	panel->height = mode->vdisplay;
 
 	// Allocate reused heap buffers suitable for SPI source
-	panel->buf = devm_kzalloc(dev, panel->width * panel->height, GFP_KERNEL);
+	panel->buf = devm_kzalloc(dev, panel->width * panel->height * 3, GFP_KERNEL);
 	panel->spi_3_xfers = devm_kzalloc(dev, sizeof(struct spi_transfer) * 3, GFP_KERNEL);
 	panel->cmd_buf = devm_kzalloc(dev, 1, GFP_KERNEL);
 	panel->trailer_buf = devm_kzalloc(dev, 1, GFP_KERNEL);

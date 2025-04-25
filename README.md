@@ -1,6 +1,17 @@
----
-title: Sharp DRM Driver
-layout: default
+# Quick Note
+
+This repo is an experimental fork to support the JDI color panel (which is otherwise very similar).
+
+See also: <https://github.com/a8ksh4/jdi-drm-driver> for prior art.
+
+There are currently the following issues with this code:
+
+- [beepy-kdb](https://github.com/ardangelo/beepberry-keyboard-driver) overlay support has been disabled.
+- Red and blue may be getting swapped?
+- The `dts` file was de-compiled and could be cleaned up.
+
+*Run at your own risk.*
+
 ---
 
 # Sharp Memory LCD Kernel Driver
