@@ -5,46 +5,36 @@
 #include "params_iface.h"
 #include "drm_iface.h"
 
-int g_param_mono_cutoff = 32;
-int g_param_mono_invert = 0;
-int g_param_overlays = 1;
-int g_param_auto_clear = 1;
-int g_param_backlit = 1;
+unsigned char g_param_color_cutoff = 127;
+unsigned char g_param_mono_cutoff = 32;
+bool g_param_mono_invert = false;
+bool g_param_overlays = true;
+bool g_param_auto_clear = true;
+bool g_param_backlit = true;
+bool g_param_color = true;
 
-static int set_param_u8(const char *val, const struct kernel_param *kp)
-{
-	int rc, result;
+module_param_named(color_cutoff, g_param_color_cutoff, byte, 0660);
+MODULE_PARM_DESC(color_cutoff,
+	"Color value from 0-255 after which color pixels will be activated");
 
-	// Parse string value
-	if ((rc = kstrtoint(val, 10, &result)) || (result < 0) || (result > 0xff)) {
-		return -EINVAL;
-	}
-
-	rc = param_set_int(val, kp);
-
-	return rc;
-}
-
-static const struct kernel_param_ops u8_param_ops = {
-	.set = set_param_u8,
-	.get = param_get_int,
-};
-
-module_param_cb(mono_cutoff, &u8_param_ops, &g_param_mono_cutoff, 0660);
+module_param_named(mono_cutoff, g_param_mono_cutoff, byte, 0660);
 MODULE_PARM_DESC(mono_cutoff,
 	"Greyscale value from 0-255 after which a mono pixel will be activated");
 
-module_param_cb(mono_invert, &u8_param_ops, &g_param_mono_invert, 0660);
+module_param_named(mono_invert, g_param_mono_invert, bool, 0660);
 MODULE_PARM_DESC(mono_invert, "0 for no inversion, 1 for inversion");
 
-module_param_cb(overlays, &u8_param_ops, &g_param_overlays, 0660);
+module_param_named(overlays, g_param_overlays, bool, 0660);
 MODULE_PARM_DESC(overlays, "0 for no overlays, 1 for overlays");
 
-module_param_cb(auto_clear, &u8_param_ops, &g_param_auto_clear, 0660);
+module_param_named(auto_clear, g_param_auto_clear, bool, 0660);
 MODULE_PARM_DESC(auto_clear, "0 to retain screen contents on driver unload, 1 to clear");
 
-module_param_cb(backlit, &u8_param_ops, &g_param_backlit, 0660);
+module_param_named(backlit, g_param_backlit, bool, 0660);
 MODULE_PARM_DESC(backlit, "0 for no backlight, 1 to backlight");
+
+module_param_named(color, g_param_color, bool, 0660);
+MODULE_PARM_DESC(color, "0 for no color, 1 for color");
 
 int params_probe(void)
 {

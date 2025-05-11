@@ -1,11 +1,13 @@
 #ifndef PARAMS_IFACE_H_
 #define PARAMS_IFACE_H_
 
-extern int g_param_mono_cutoff;
-extern int g_param_mono_invert;
-extern int g_param_overlays;
-extern int g_param_auto_clear;
-extern int g_param_backlit;
+extern unsigned char g_param_color_cutoff;
+extern unsigned char g_param_mono_cutoff;
+extern bool g_param_mono_invert;
+extern bool g_param_overlays;
+extern bool g_param_auto_clear;
+extern bool g_param_backlit;
+extern bool g_param_color;
 
 int params_probe(void);
 void params_remove(void);

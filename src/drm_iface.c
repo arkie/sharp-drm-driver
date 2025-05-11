@@ -40,13 +40,6 @@
 #include "ioctl_iface.h"
 #include "drm_iface.h"
 
-#define MONO 0
-
-#if MONO
-#define CMD_WRITE_LINE 0b10001000
-#else
-#define CMD_WRITE_LINE 0b10000000
-#endif
 #define CMD_CLEAR_SCREEN 0b00100000
 
 // Globals
@@ -108,8 +101,8 @@ static void vcom_timer_callback(struct timer_list *t)
 	gpiod_set_value(panel->gpio_vcom, vcom_setting);
 
 	if (backlit_on != g_param_backlit) {
-	  backlit_on = g_param_backlit;
-	  gpiod_set_value(panel->gpio_backlit, backlit_on ? 1 : 0);
+		backlit_on = g_param_backlit;
+		gpiod_set_value(panel->gpio_backlit, backlit_on ? 1 : 0);
 	}
 
 	// Reschedule the timer
@@ -136,21 +129,13 @@ static int sharp_memory_spi_clear_screen(struct sharp_memory_panel *panel)
 	return rc;
 }
 
-static inline u8 sharp_memory_reverse_byte(u8 b)
-{
-	// b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
-	// b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
-	// b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
-	return b;
-}
-
 static int sharp_memory_spi_write_tagged_lines(struct sharp_memory_panel *panel,
 	void *line_data, size_t len)
 {
 	int rc;
 
 	// Write line command
-	panel->cmd_buf[0] = CMD_WRITE_LINE;
+	panel->cmd_buf[0] = g_param_color ? 0b10000000 : 0b10001000;
 	panel->spi_3_xfers[0].tx_buf = panel->cmd_buf;
 	panel->spi_3_xfers[0].len = 1;
 
@@ -209,16 +194,46 @@ static void draw_overlays(struct sharp_memory_panel *panel, u8* buf, int width,
 				}
 
 				dx = (x + sx) - clip->x1;
-#if MONO
-				buf[(y + dy) * (clip->x2 - clip->x1) + dx]
-					= ov->pixels[(sy * ov->width) + sx];
-#else
-				int i = (y + dy) * (clip->x2 - clip->x1) + dx;
-				buf[i * 3] = ov->pixels[(sy * ov->width) + sx];
-#endif
+				if (g_param_color) {
+					int i = 3 * ((y + dy) * (clip->x2 - clip->x1) + dx);
+					int p = ov->pixels[(sy * ov->width) + sx];
+					buf[i + 2] = p;
+				} else {
+					buf[(y + dy) * (clip->x2 - clip->x1) + dx]
+						= ov->pixels[(sy * ov->width) + sx];
+				}
 			}
 		}
 	}
+}
+
+// Based on sharp_memory_gray8_to_mono_tagged.
+static size_t sharp_memory_to_color_tagged(u8 *buf, int width, int height, int y0) {
+	int line, b8, b1;
+	unsigned int d;
+	int const tagged_line_len = 2 + width / 8;
+	for (line = 0; line < height; line++) {
+		// Look at 8 3 byte sections.
+		for (b8 = 0; b8 < width; b8 += 24) {
+			d = 0;
+			for (b1 = 0; b1 < 24; b1++) {
+				if (buf[(line * width) + b8 + b1] >= g_param_color_cutoff) {
+					d |= (0b10000000 << 16) >> b1;
+				}
+			}
+			int i = (line * tagged_line_len) + 1 + (b8 / 8);
+			// Flip red and blue.
+			int mask = 0b1001001001001001001001;
+			d = (d & mask << 2) >> 2 | (d & mask << 1) | (d & mask) << 2;
+			buf[i] = d >> 16;
+			buf[i+1] = d >> 8;
+			buf[i+2] = d;
+		}
+		buf[line * tagged_line_len] = (u8)(y0 + 1); // Indexed from 1
+		buf[(line * tagged_line_len) + tagged_line_len - 1] = 0;
+		y0++;
+	}
+	return height * tagged_line_len;
 }
 
 static size_t sharp_memory_gray8_to_mono_tagged(u8 *buf, int width, int height, int y0)
@@ -263,7 +278,7 @@ static size_t sharp_memory_gray8_to_mono_tagged(u8 *buf, int width, int height, 
 		}
 
 		// Write the line number and trailer tags
-		buf[line * tagged_line_len] = sharp_memory_reverse_byte((u8)(y0 + 1)); // Indexed from 1
+		buf[line * tagged_line_len] = (u8)(y0 + 1); // Indexed from 1
 		buf[(line * tagged_line_len) + tagged_line_len - 1] = 0;
 		y0++;
 	}
@@ -293,31 +308,32 @@ static int sharp_memory_clip_mono_tagged(struct sharp_memory_panel* panel, size_
 	// Initialize destination (buf) and source (video)
 	iosys_map_set_vaddr(&dst, buf);
 	iosys_map_set_vaddr(&vmap, dma_obj->vaddr);
-	// DMA `clip` into `buf` and convert to 8-bit grayscale
-#if MONO
-	drm_fb_xrgb8888_to_gray8(&dst, NULL, &vmap, fb, clip);
-#else
-	drm_fb_xrgb8888_to_rgb888(&dst, NULL, &vmap, fb, clip);
-#endif
+	if (g_param_color) {
+		drm_fb_xrgb8888_to_rgb888(&dst, NULL, &vmap, fb, clip);
+		drm_gem_fb_end_cpu_access(fb, DMA_FROM_DEVICE);
+		if (g_param_overlays) {
+			draw_overlays(panel, buf, fb->width, clip);
+		}
+		*result_len = sharp_memory_to_color_tagged(buf,
+			(clip->x2 - clip->x1) * 3, (clip->y2 - clip->y1), clip->y1);
+	} else {
+		// DMA `clip` into `buf` and convert to 8-bit grayscale
+		drm_fb_xrgb8888_to_gray8(&dst, NULL, &vmap, fb, clip);
 
-	// End DMA area
-	drm_gem_fb_end_cpu_access(fb, DMA_FROM_DEVICE);
+		// End DMA area
+		drm_gem_fb_end_cpu_access(fb, DMA_FROM_DEVICE);
 
-	// Add overlays
-	// if (g_param_overlays) {
+		// Add overlays
+		if (g_param_overlays) {
 
-	// 	// TODO: track overlay draw region
-	// 	draw_overlays(panel, buf, fb->width, clip);
-	// }
+			// TODO: track overlay draw region
+			draw_overlays(panel, buf, fb->width, clip);
+		}
 
-#if MONO
-	// Convert in-place from 8-bit grayscale to mono
-	*result_len = sharp_memory_gray8_to_mono_tagged(buf,
-		(clip->x2 - clip->x1), (clip->y2 - clip->y1), clip->y1);
-#else
-	*result_len = sharp_memory_gray8_to_mono_tagged(buf,
-		(clip->x2 - clip->x1) * 3, (clip->y2 - clip->y1), clip->y1);
-#endif
+		// Convert in-place from 8-bit grayscale to mono
+		*result_len = sharp_memory_gray8_to_mono_tagged(buf,
+			(clip->x2 - clip->x1), (clip->y2 - clip->y1), clip->y1);
+	}
 
 	// Success
 	return 0;
