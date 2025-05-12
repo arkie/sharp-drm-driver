@@ -197,6 +197,8 @@ static void draw_overlays(struct sharp_memory_panel *panel, u8* buf, int width,
 				if (g_param_color) {
 					int i = 3 * ((y + dy) * (clip->x2 - clip->x1) + dx);
 					int p = ov->pixels[(sy * ov->width) + sx];
+					buf[i] = p;
+					buf[i + 1] = p;
 					buf[i + 2] = p;
 				} else {
 					buf[(y + dy) * (clip->x2 - clip->x1) + dx]
