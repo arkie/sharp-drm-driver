@@ -10,7 +10,6 @@ unsigned char g_param_mono_cutoff = 32;
 bool g_param_mono_invert = false;
 bool g_param_overlays = true;
 bool g_param_auto_clear = true;
-bool g_param_backlit = true;
 bool g_param_color = true;
 
 module_param_named(color_cutoff, g_param_color_cutoff, byte, 0660);
@@ -29,9 +28,6 @@ MODULE_PARM_DESC(overlays, "0 for no overlays, 1 for overlays");
 
 module_param_named(auto_clear, g_param_auto_clear, bool, 0660);
 MODULE_PARM_DESC(auto_clear, "0 to retain screen contents on driver unload, 1 to clear");
-
-module_param_named(backlit, g_param_backlit, bool, 0660);
-MODULE_PARM_DESC(backlit, "0 for no backlight, 1 to backlight");
 
 module_param_named(color, g_param_color, bool, 0660);
 MODULE_PARM_DESC(color, "0 for no color, 1 for color");

@@ -6,7 +6,6 @@ extern unsigned char g_param_mono_cutoff;
 extern bool g_param_mono_invert;
 extern bool g_param_overlays;
 extern bool g_param_auto_clear;
-extern bool g_param_backlit;
 extern bool g_param_color;
 
 int params_probe(void);

@@ -80,15 +80,12 @@ struct sharp_memory_panel
 
 	struct gpio_desc *gpio_disp;
 	struct gpio_desc *gpio_vcom;
-	struct gpio_desc *gpio_backlit;
 };
 
 static inline struct sharp_memory_panel *drm_to_panel(struct drm_device *drm)
 {
 	return container_of(drm, struct sharp_memory_panel, drm);
 }
-
-bool backlit_on;
 
 static void vcom_timer_callback(struct timer_list *t)
 {
@@ -99,11 +96,6 @@ static void vcom_timer_callback(struct timer_list *t)
 	// Toggle the GPIO pin
 	vcom_setting = (vcom_setting) ? 0 : 1;
 	gpiod_set_value(panel->gpio_vcom, vcom_setting);
-
-	if (backlit_on != g_param_backlit) {
-		backlit_on = g_param_backlit;
-		gpiod_set_value(panel->gpio_backlit, backlit_on ? 1 : 0);
-	}
 
 	// Reschedule the timer
 	mod_timer(&panel->vcom_timer, jiffies + msecs_to_jiffies(1000));
@@ -395,7 +387,6 @@ static void power_off(struct sharp_memory_panel *panel)
 		gpiod_set_value(panel->gpio_disp, 0);
 	}
 	gpiod_set_value(panel->gpio_vcom, 0);
-	gpiod_set_value(panel->gpio_backlit, 0);
 }
 
 static void sharp_memory_pipe_enable(struct drm_simple_display_pipe *pipe,
@@ -587,10 +578,6 @@ int drm_probe(struct spi_device *spi)
 	panel->gpio_vcom = devm_gpiod_get(dev, "vcom", GPIOD_OUT_LOW);
 	if (IS_ERR(panel->gpio_vcom))
 		return dev_err_probe(dev, PTR_ERR(panel->gpio_vcom), "Failed to get GPIO 'vcom'\n");
-
-	panel->gpio_backlit = devm_gpiod_get(dev, "backlit", GPIOD_OUT_LOW);
-	if (IS_ERR(panel->gpio_backlit))
-		return dev_err_probe(dev, PTR_ERR(panel->gpio_backlit), "Failed to get GPIO 'backlit'\n");
 
 	// Initalize DRM mode
 	drm = &panel->drm;

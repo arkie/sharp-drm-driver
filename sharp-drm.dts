@@ -1,4 +1,5 @@
 // https://github.com/hyphenlee/jdi-drm-rpi
+// PWM from https://github.com/raspberrypi/linux/blob/rpi-5.4.y/arch/arm/boot/dts/overlays/pwm-overlay.dts
 /dts-v1/;
 /plugin/;
 
@@ -31,8 +32,13 @@
 		target = <&gpio>;
 		__overlay__ {
 			sharp_pins: sharp_pins {
-				brcm,pins = <23 22 18 17>;
-				brcm,function = <1 1 1 0>; /* out */
+				brcm,pins = <23 22>;
+				brcm,function = <1 1>; /* out */
+			};
+
+			pwm_pins: pwm_pins {
+				brcm,pins = <18>;
+				brcm,function = <2>; /* Alt5 */
 			};
 		};
 	};
@@ -51,14 +57,32 @@
 				pinctrl-0 = <&sharp_pins>;
 				vcom-gpios = <&gpio 23 0>;
 				disp-gpios = <&gpio 22 0>;
-				backlit-gpios = <&gpio 18 0>;
 				spi-cs-high = <1>;
 				spi-max-frequency = <4000000>;
 				buswidth = <8>;
 				debug = <0>;
+			};
+		};
+	};
 
-				interrupt-parent = <&gpio>;
-				interrupts = <17 0x01>;
+	fragment@4 {
+		target = <&pwm>;
+		frag4: __overlay__ {
+			pinctrl-names = "default";
+			pinctrl-0 = <&pwm_pins>;
+			assigned-clock-rates = <100000000>;
+			status = "okay";
+		};
+	};
+
+	fragment@5 {
+		target-path = "/";
+		__overlay__ {
+			jdi-backlight {
+				compatible = "pwm-backlight";
+				pwms = <&pwm 0 5000000 0>;
+				brightness-levels = <0 8 16 32 64 128 255>;
+				default-brightness-level = <4>;
 			};
 		};
 	};
